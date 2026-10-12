@@ -102,6 +102,41 @@ async def api_exchange(request: Request):
 async def api_pubkey():
     return Response(content=appcfg.public_key_hex, media_type="text/plain")
 
+trip_limiter = RateLimiter(max_hits=60, window_seconds=60)
+
+@app.post("/api/protection_trip")
+async def api_protection_trip(request: Request):
+    ip = client_ip(request)
+    if not trip_limiter.allow(ip):
+        return Response(content=b"", media_type="application/octet-stream")
+    body = await request.body()
+    if len(body) > 4096:
+        return Response(content=b"", media_type="application/octet-stream")
+    try:
+        import json as _json
+        data = _json.loads(body.decode("utf-8", "replace"))
+    except Exception:
+        return Response(content=b"", media_type="application/octet-stream",
+                        status_code=400)
+    key_hash_hex = str(data.get("key_hash", ""))[:64]
+    reason = str(data.get("reason", ""))[:200]
+    source = str(data.get("source", ""))[:40]
+    hwid_hex = str(data.get("hwid", ""))[:128]
+    account_id = 0
+    if len(key_hash_hex) == 64:
+        try:
+            key_hash = bytes.fromhex(key_hash_hex)
+            lic = store.find_license_by_hash(key_hash)
+            if lic:
+                account_id = lic.account_id
+        except Exception:
+            pass
+    detail = (f"source={source or 'unknown'} "
+              f"hwid={hwid_hex[:16] + '...' if hwid_hex else '-'} "
+              f"reason={reason or '-'}")
+    store.log_event("protection_trip", 0, account_id, ip, detail)
+    return Response(content=b"ok", media_type="application/octet-stream")
+
 @app.get("/healthz")
 async def healthz():
     return {"ok": True}
