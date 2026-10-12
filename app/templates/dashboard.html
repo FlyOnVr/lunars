@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% set active = 'home' %}
+{% block title %}Overview · License Server{% endblock %}
+{% block content %}
+<header class="page-head">
+  <h1>Overview</h1>
+  <p class="muted">Server-side licensing. The server decides entitlement; the loader only verifies and runs what it's sent.</p>
+</header>
+
+<section class="stat-row">
+  <div class="stat"><div class="stat-num">{{ counts.licenses }}</div><div class="stat-lbl">Licenses</div></div>
+  <div class="stat"><div class="stat-num">{{ counts.items }}</div><div class="stat-lbl">Items</div></div>
+  <div class="stat"><div class="stat-num">{{ counts.sessions_alive }}</div><div class="stat-lbl">Live sessions</div></div>
+  <div class="stat"><div class="stat-num">{{ counts.bans }}</div><div class="stat-lbl">Bans</div></div>
+  <div class="stat {{ 'warn' if counts.reuse_events }}"><div class="stat-num">{{ counts.reuse_events }}</div><div class="stat-lbl">Reuse events</div></div>
+</section>
+
+<section class="card">
+  <h2>Public key for the loader</h2>
+  <p class="muted">Embed this (X&#8741;Y, 64 bytes, hex) in the client so it can verify every response. It is safe to ship.</p>
+  <div class="codebox">
+    <code id="pubkey">{{ pubkey }}</code>
+    <button class="ghost" onclick="navigator.clipboard.writeText(document.getElementById('pubkey').textContent)">Copy</button>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head"><h2>Recent events</h2><a class="ghost" href="/admin/events">View all</a></div>
+  <table>
+    <thead><tr><th>When</th><th>Kind</th><th>Session</th><th>Account</th><th>IP</th><th>Detail</th></tr></thead>
+    <tbody>
+    {% for e in events %}
+      <tr class="{{ 'row-warn' if e.kind in ('reuse','bad_secret','login_hwid_mismatch') }}">
+        <td class="mono">{{ e.created|ts }}</td>
+        <td><span class="tag tag-{{ e.kind }}">{{ e.kind }}</span></td>
+        <td>{{ e.session_id or '—' }}</td>
+        <td>{{ e.account_id or '—' }}</td>
+        <td class="mono">{{ e.ip or '' }}</td>
+        <td class="mono small">{{ e.detail or '' }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">No events yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h2>Change admin password</h2>
+  <form method="post" action="/admin/password" class="inline-form">
+    <input name="new_password" type="password" placeholder="New password (min 10 chars)" minlength="10" required>
+    <button type="submit">Update</button>
+  </form>
+</section>
+{% endblock %}

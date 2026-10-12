@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% set active = 'events' %}
+{% block title %}Event log · License Server{% endblock %}
+{% block content %}
+<header class="page-head">
+  <h1>Event log</h1>
+  <p class="muted">Every rejection and notable event. Watch for spikes in <span class="tag tag-reuse">reuse</span> — that's the tell for shared / stolen pairs.</p>
+</header>
+
+<section class="card">
+  <div class="card-head">
+    <h2>Events</h2>
+    {% if events %}
+    <div class="inline-form">
+      <span class="muted small" id="bulk-count">0 selected</span>
+      <button type="submit" form="bulk-events-form" class="ghost small danger" disabled id="bulk-del-btn">Delete selected</button>
+      <form method="post" action="/admin/events/delete_all" class="inline"
+            onsubmit="return confirm('Clear the ENTIRE event log? This cannot be undone.');">
+        <button class="ghost small danger">Clear all</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+
+  <form id="bulk-events-form" method="post" action="/admin/events/delete_bulk"
+        onsubmit="return confirm('Delete all selected events? Cannot be undone.');"></form>
+
+  <table>
+    <thead><tr>
+      <th>{% if events %}<input type="checkbox" id="bulk-select-all">{% endif %}</th>
+      <th>When</th><th>Kind</th><th>Session</th><th>Account</th><th>IP</th><th>Detail</th>
+    </tr></thead>
+    <tbody>
+    {% for e in events %}
+      <tr class="{{ 'row-warn' if e.kind in ('reuse','bad_secret','login_hwid_mismatch') }}">
+        <td><input type="checkbox" class="bulk-select" name="event_id" value="{{ e.id }}" form="bulk-events-form"></td>
+        <td class="mono">{{ e.created|ts }}</td>
+        <td><span class="tag tag-{{ e.kind }}">{{ e.kind }}</span></td>
+        <td>{{ e.session_id or '—' }}</td>
+        <td>{{ e.account_id or '—' }}</td>
+        <td class="mono">{{ e.ip or '' }}</td>
+        <td class="mono small">{{ e.detail or '' }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="muted">No events yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{% if events %}
+<script>
+(function () {
+  var all = document.getElementById('bulk-select-all');
+  var btn = document.getElementById('bulk-del-btn');
+  var countEl = document.getElementById('bulk-count');
+  var boxes = document.querySelectorAll('input.bulk-select');
+
+  function update() {
+    var n = 0;
+    boxes.forEach(function (b) { if (b.checked) n++; });
+    countEl.textContent = n + ' selected';
+    btn.disabled = (n === 0);
+    all.checked = (n === boxes.length && n > 0);
+    all.indeterminate = (n > 0 && n < boxes.length);
+  }
+
+  all.addEventListener('change', function () {
+    boxes.forEach(function (b) { b.checked = all.checked; });
+    update();
+  });
+  boxes.forEach(function (b) { b.addEventListener('change', update); });
+  update();
+})();
+</script>
+{% endif %}
+{% endblock %}
