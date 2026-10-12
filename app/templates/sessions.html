@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% set active = 'sessions' %}
+{% block title %}Sessions · License Server{% endblock %}
+{% block content %}
+<header class="page-head">
+  <h1>Sessions</h1>
+  <p class="muted">One active session per license. Revoke a session to kill it immediately, ban its HWID / IP, or hard-delete it from history.</p>
+</header>
+
+<section class="card">
+  <div class="card-head">
+    <h2>Sessions</h2>
+    {% if sessions %}
+    <div class="inline-form">
+      <span class="muted small" id="bulk-count">0 selected</span>
+      <button type="submit" form="bulk-sessions-form" class="ghost small danger" disabled id="bulk-del-btn">Delete selected</button>
+      <form method="post" action="/admin/sessions/delete_all" class="inline"
+            onsubmit="return confirm('Delete EVERY session row and every outstanding token? This cannot be undone.');">
+        <button class="ghost small danger">Clear all</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+
+  <form id="bulk-sessions-form" method="post" action="/admin/sessions/delete_bulk"
+        onsubmit="return confirm('Delete all selected sessions and their outstanding tokens? Cannot be undone.');"></form>
+
+  <table>
+    <thead><tr>
+      <th>{% if sessions %}<input type="checkbox" id="bulk-select-all">{% endif %}</th>
+      <th>ID</th><th>Account</th><th>HWID</th><th>IP</th><th>Last seen</th><th>Status</th><th>Actions</th>
+    </tr></thead>
+    <tbody>
+    {% for s in sessions %}
+      <tr>
+        <td><input type="checkbox" class="bulk-select" name="session_id" value="{{ s.id }}" form="bulk-sessions-form"></td>
+        <td class="mono">{{ s.id }}</td>
+        <td class="mono">#{{ s.account_id }} {{ s.label }}</td>
+        <td class="mono small">{{ (s.hwid_hash.hex()[:16] + '…') if s.hwid_hash else '—' }}</td>
+        <td class="mono">{{ s.ip }}</td>
+        <td class="mono">{{ s.last_seen|ts }}</td>
+        <td>{% if s.alive %}<span class="tag tag-login_ok">alive</span>{% else %}<span class="tag tag-bad_secret">dead{% if s.revoke_reason %} · {{ s.revoke_reason }}{% endif %}</span>{% endif %}</td>
+        <td class="actions">
+          {% if s.alive %}
+          <form method="post" action="/admin/sessions/revoke" class="inline">
+            <input type="hidden" name="session_id" value="{{ s.id }}">
+            <button class="ghost small">Revoke</button>
+          </form>
+          {% endif %}
+          <form method="post" action="/admin/sessions/ban_hwid" class="inline">
+            <input type="hidden" name="session_id" value="{{ s.id }}">
+            <button class="ghost small danger">Ban HWID</button>
+          </form>
+          <form method="post" action="/admin/sessions/ban_ip" class="inline">
+            <input type="hidden" name="session_id" value="{{ s.id }}">
+            <button class="ghost small danger">Ban IP</button>
+          </form>
+          <form method="post" action="/admin/sessions/delete" class="inline"
+                onsubmit="return confirm('Hard-delete session #{{ s.id }} and its outstanding tokens? Cannot be undone.');">
+            <input type="hidden" name="session_id" value="{{ s.id }}">
+            <button class="ghost small danger">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="8" class="muted">No sessions yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{% if sessions %}
+<script>
+(function () {
+  var all = document.getElementById('bulk-select-all');
+  var btn = document.getElementById('bulk-del-btn');
+  var countEl = document.getElementById('bulk-count');
+  var boxes = document.querySelectorAll('input.bulk-select');
+
+  function update() {
+    var n = 0;
+    boxes.forEach(function (b) { if (b.checked) n++; });
+    countEl.textContent = n + ' selected';
+    btn.disabled = (n === 0);
+    all.checked = (n === boxes.length && n > 0);
+    all.indeterminate = (n > 0 && n < boxes.length);
+  }
+
+  all.addEventListener('change', function () {
+    boxes.forEach(function (b) { b.checked = all.checked; });
+    update();
+  });
+  boxes.forEach(function (b) { b.addEventListener('change', update); });
+  update();
+})();
+</script>
+{% endif %}
+{% endblock %}

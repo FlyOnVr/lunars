@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: astre-license-server
+    runtime: python
+    plan: starter
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: python run.py
+    healthCheckPath: /healthz
+    envVars:
+      - key: LICENSE_HOST
+        value: 0.0.0.0
+      - key: LICENSE_DATA_DIR
+        value: /var/data
+      - key: PYTHON_VERSION
+        value: 3.12.3
+    disk:
+      name: license-data
+      mountPath: /var/data
+      sizeGB: 1
