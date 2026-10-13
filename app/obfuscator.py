@@ -1,11 +1,68 @@
 from __future__ import annotations
 
+import hashlib
 import struct
+
+
+MASTER_SECRET = b"astre_payload_master_v1_change_me_per_release"
+MAGIC = b"AEN1"
+LAYERS = 10
+
+
+def _layer_key(idx: int) -> bytes:
+    h = hashlib.sha256()
+    h.update(b"AENC_LAYER_")
+    h.update(str(idx).encode("ascii"))
+    h.update(b"_")
+    h.update(MASTER_SECRET)
+    return h.digest()
+
+
+def _rotate_byte(b: int, bits: int) -> int:
+    bits = bits & 7
+    return ((b >> bits) | (b << (8 - bits))) & 0xFF
+
+
+def encrypt_payload(data: bytes, layers: int = LAYERS) -> bytes:
+    out = bytearray(data)
+    n = len(out)
+    for i in range(layers):
+        k = _layer_key(i)
+        klen = len(k)
+        for j in range(n):
+            out[j] ^= k[j % klen]
+        rot = ((i * 3) + 1) % 8
+        if rot:
+            for j in range(n):
+                out[j] = _rotate_byte(out[j], rot)
+    header = MAGIC + bytes([layers])
+    return header + bytes(out)
+
+
+def decrypt_payload(blob: bytes) -> bytes:
+    if len(blob) < 5 or blob[:4] != MAGIC:
+        return blob
+    layers = blob[4]
+    out = bytearray(blob[5:])
+    n = len(out)
+    for i in range(layers - 1, -1, -1):
+        rot = ((i * 3) + 1) % 8
+        if rot:
+            inv = (8 - rot) & 7
+            for j in range(n):
+                out[j] = _rotate_byte(out[j], inv)
+        k = _layer_key(i)
+        klen = len(k)
+        for j in range(n):
+            out[j] ^= k[j % klen]
+    return bytes(out)
 
 
 def _read_u16(buf, off): return struct.unpack_from("<H", buf, off)[0]
 def _read_u32(buf, off): return struct.unpack_from("<I", buf, off)[0]
 def _write_u32(buf, off, v): struct.pack_into("<I", buf, off, v)
+
+
 def _zero(buf, off, n):
     for i in range(n):
         if 0 <= off + i < len(buf):
@@ -21,16 +78,10 @@ def _rva_to_offset(buf, rva, sections):
 
 
 def scrub_dotnet_dll(data: bytes) -> bytes:
-    """Light server-side scrubber for .NET assemblies.
-    Not a real IL virtualizer — removes trivially useful metadata that
-    helps attackers (PDB paths, debug directory, build timestamps) and
-    xor-masks the #Strings heap region. For true IL virtualization run
-    BitMono/Eazfuscator before upload."""
     if len(data) < 0x200:
         return data
     try:
         buf = bytearray(data)
-
         if buf[0] != 0x4D or buf[1] != 0x5A:
             return data
         pe_off = _read_u32(buf, 0x3C)
@@ -40,7 +91,6 @@ def scrub_dotnet_dll(data: bytes) -> bytes:
             return data
 
         file_hdr = pe_off + 4
-        machine = _read_u16(buf, file_hdr)
         nsections = _read_u16(buf, file_hdr + 2)
         _write_u32(buf, file_hdr + 4, 0)
         opt_sz = _read_u16(buf, file_hdr + 16)
@@ -64,7 +114,7 @@ def scrub_dotnet_dll(data: bytes) -> bytes:
 
         if num_dirs > 6:
             dbg_dir_off = data_dir_off + 6 * 8
-            dbg_rva = _read_u32(buf, dbg_dir_off)
+            dbg_rva  = _read_u32(buf, dbg_dir_off)
             dbg_size = _read_u32(buf, dbg_dir_off + 4)
             if dbg_rva and dbg_size:
                 phys = _rva_to_offset(buf, dbg_rva, sections)
@@ -83,25 +133,6 @@ def scrub_dotnet_dll(data: bytes) -> bytes:
                     _zero(buf, phys, dbg_size)
                 _write_u32(buf, dbg_dir_off, 0)
                 _write_u32(buf, dbg_dir_off + 4, 0)
-
-        if num_dirs > 14:
-            cli_dir_off = data_dir_off + 14 * 8
-            cli_rva  = _read_u32(buf, cli_dir_off)
-            cli_size = _read_u32(buf, cli_dir_off + 4)
-            if cli_rva and cli_size:
-                cli_phys = _rva_to_offset(buf, cli_rva, sections)
-                if cli_phys is not None and cli_phys + 16 <= len(buf):
-                    md_rva  = _read_u32(buf, cli_phys + 8)
-                    md_phys = _rva_to_offset(buf, md_rva, sections)
-                    if md_phys is not None and md_phys + 20 <= len(buf):
-                        sig = _read_u32(buf, md_phys)
-                        if sig == 0x424A5342:
-                            vlen = _read_u32(buf, md_phys + 12)
-                            if 0 < vlen <= 255:
-                                ver_off = md_phys + 16
-                                for i in range(vlen):
-                                    if ver_off + i < len(buf) and buf[ver_off + i] != 0:
-                                        buf[ver_off + i] = ord('.')
 
         return bytes(buf)
     except Exception:
