@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% set active = 'keys' %}
+{% block title %}Keys &amp; access · License Server{% endblock %}
+{% block content %}
+<header class="page-head">
+  <h1>Keys &amp; access</h1>
+  <p class="muted">Generate license keys and decide which account can receive which item. Keys are encrypted at rest with <code>secret.key</code>, so you can reveal them later from this page.</p>
+</header>
+
+{% if new_key %}
+<section class="card success">
+  <h2>New key{{ 's' if new_key|length > 1 }}</h2>
+  {% for k in new_key %}
+    <div class="codebox"><code>{{ k }}</code>
+      <button class="ghost" onclick="navigator.clipboard.writeText('{{ k }}')">Copy</button></div>
+  {% endfor %}
+</section>
+{% endif %}
+
+{% if revealed %}
+<section class="card success">
+  <h2>Revealed key for license #{{ revealed.license_id }}</h2>
+  {% if revealed.key %}
+    <div class="codebox"><code>{{ revealed.key }}</code>
+      <button class="ghost" onclick="navigator.clipboard.writeText('{{ revealed.key }}')">Copy</button></div>
+  {% else %}
+    <p class="muted">No stored key for this license — it was generated before encryption-at-rest was enabled, or <code>secret.key</code> doesn't match this DB.</p>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Generate keys</h2>
+  <form method="post" action="/admin/keys/generate" class="grid-form">
+    <label>Label<input name="label" placeholder="customer name / order id"></label>
+    <label>Note<input name="note" placeholder="optional"></label>
+    <label>Count<input name="count" type="number" value="1" min="1" max="100"></label>
+    <button type="submit">Generate</button>
+  </form>
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <h2>Licenses</h2>
+    <div class="inline-form">
+      {% if licenses %}
+      <span class="muted small" id="bulk-count">0 selected</span>
+      <button type="submit" form="bulk-keys-form" class="ghost small danger" disabled id="bulk-del-btn">Delete selected</button>
+      {% endif %}
+      <a href="/admin/keys/download" class="ghost small">Download .txt</a>
+    </div>
+  </div>
+
+  <form id="bulk-keys-form" method="post" action="/admin/keys/delete_bulk"
+        onsubmit="return confirm('Delete all selected licenses? Revokes their sessions and drops entitlements. Cannot be undone.');"></form>
+
+  <table>
+    <thead><tr>
+      <th>{% if licenses %}<input type="checkbox" id="bulk-select-all">{% endif %}</th>
+      <th>ID</th><th>Acct</th><th>Label</th><th>Bound HWID</th><th>Status</th><th>Created</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for l in licenses %}
+      <tr>
+        <td><input type="checkbox" class="bulk-select" name="license_id" value="{{ l.id }}" form="bulk-keys-form"></td>
+        <td class="mono">{{ l.id }}</td>
+        <td class="mono">{{ l.account_id }}</td>
+        <td>{{ l.label }}{% if l.note %}<span class="muted small"> — {{ l.note }}</span>{% endif %}</td>
+        <td class="mono small">{{ (l.hwid_hash.hex()[:16] + '…') if l.hwid_hash else '—' }}</td>
+        <td>{% if l.disabled %}<span class="tag tag-bad_secret">disabled</span>{% else %}<span class="tag tag-login_ok">active</span>{% endif %}</td>
+        <td class="mono">{{ l.created|ts }}</td>
+        <td class="actions">
+          {% if l.has_key_enc %}
+          <form method="post" action="/admin/keys/show" class="inline">
+            <input type="hidden" name="license_id" value="{{ l.id }}">
+            <button class="ghost small">Reveal</button>
+          </form>
+          {% endif %}
+          <form method="post" action="/admin/keys/disable" class="inline">
+            <input type="hidden" name="license_id" value="{{ l.id }}">
+            <input type="hidden" name="disabled" value="{{ 0 if l.disabled else 1 }}">
+            <button class="ghost small">{{ 'Enable' if l.disabled else 'Disable' }}</button>
+          </form>
+          <form method="post" action="/admin/keys/delete" class="inline"
+                onsubmit="return confirm('Delete license #{{ l.id }} ({{ l.label }})? This revokes any active session, drops entitlements, and cannot be undone.');">
+            <input type="hidden" name="license_id" value="{{ l.id }}">
+            <button class="ghost small danger">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="8" class="muted">No licenses yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{% if licenses %}
+<script>
+(function () {
+  var all = document.getElementById('bulk-select-all');
+  var btn = document.getElementById('bulk-del-btn');
+  var countEl = document.getElementById('bulk-count');
+  var boxes = document.querySelectorAll('input.bulk-select');
+
+  function update() {
+    var n = 0;
+    boxes.forEach(function (b) { if (b.checked) n++; });
+    countEl.textContent = n + ' selected';
+    btn.disabled = (n === 0);
+    all.checked = (n === boxes.length && n > 0);
+    all.indeterminate = (n > 0 && n < boxes.length);
+  }
+
+  all.addEventListener('change', function () {
+    boxes.forEach(function (b) { b.checked = all.checked; });
+    update();
+  });
+  boxes.forEach(function (b) { b.addEventListener('change', update); });
+  update();
+})();
+</script>
+{% endif %}
+
+<section class="card">
+  <h2>Grant an item to an account</h2>
+  <form method="post" action="/admin/entitlements/grant" class="inline-form">
+    <select name="account_id" required>
+      <option value="" disabled selected>Account…</option>
+      {% for a in accounts %}<option value="{{ a.id }}">#{{ a.id }} {{ a.label }}</option>{% endfor %}
+    </select>
+    <select name="item_id" required>
+      <option value="" disabled selected>Item…</option>
+      {% for it in items %}<option value="{{ it.id }}">#{{ it.id }} {{ it.name }}</option>{% endfor %}
+    </select>
+    <button type="submit">Grant</button>
+  </form>
+
+  <table class="mt">
+    <thead><tr><th>Account</th><th>Item</th><th>Source</th><th>Granted</th><th></th></tr></thead>
+    <tbody>
+    {% for e in entitlements %}
+      <tr>
+        <td class="mono">#{{ e.account_id }} {{ e.label }}</td>
+        <td class="mono">#{{ e.item_id }} {{ e.item_name }}</td>
+        <td class="mono small">{{ e.source }}</td>
+        <td class="mono">{{ e.created|ts }}</td>
+        <td>
+          <form method="post" action="/admin/entitlements/revoke" class="inline">
+            <input type="hidden" name="account_id" value="{{ e.account_id }}">
+            <input type="hidden" name="item_id" value="{{ e.item_id }}">
+            <button class="ghost small danger">Revoke</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">No entitlements yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

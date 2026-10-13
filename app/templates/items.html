@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% set active = 'items' %}
+{% block title %}Payloads · License Server{% endblock %}
+{% block content %}
+<header class="page-head">
+  <h1>Payloads</h1>
+  <p class="muted">Each payload belongs to a menu (one loader = one menu). Mark one payload per menu as <strong>Current</strong> so the loader auto-picks it when the user clicks Inject.</p>
+</header>
+
+<section class="card">
+  <h2>Filter by menu</h2>
+  <div class="inline-form" style="flex-wrap:wrap;gap:6px">
+    <a href="/admin/items" class="ghost small {{ 'danger' if current_menu_id is none }}">All</a>
+    {% for m in menus %}
+      <a href="/admin/items?menu={{ m.id }}" class="ghost small {{ 'danger' if current_menu_id == m.id }}">{{ m.name }}</a>
+    {% endfor %}
+    <a href="/admin/menus" class="ghost small">+ new menu</a>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Upload a payload</h2>
+  <form method="post" action="/admin/items/upload" enctype="multipart/form-data" class="grid-form">
+    <label>Menu
+      <select name="menu_id" required>
+        <option value="0" disabled {{ 'selected' if current_menu_id is none }}>Pick a menu…</option>
+        {% for m in menus %}
+          <option value="{{ m.id }}" {{ 'selected' if current_menu_id == m.id }}>{{ m.name }} ({{ m.slug }})</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Name<input name="name" placeholder="e.g. v1.2.0" required></label>
+    <label>Version<input name="version" placeholder="1.0.0"></label>
+    <label>Entry point<input name="entry_point" placeholder="AstreMenu.Entry.Init"></label>
+    <label>Description<textarea name="description" rows="2" placeholder="Short blurb shown on the loader card"></textarea></label>
+    <label class="file-label">DLL / bundle<input name="dll" type="file" required></label>
+    <label class="file-label">Card image (PNG/JPG, optional)<input name="image" type="file" accept="image/png,image/jpeg,image/webp"></label>
+    <label><input type="checkbox" name="is_current" value="1"> Set as <strong>current</strong> version for this menu (loader auto-picks)</label>
+    <button type="submit">Upload payload</button>
+  </form>
+  <p class="hint">On upload the server scrubs debug paths from the DLL (PDB path, debug directory) before storing it. For real IL virtualization run BitMono on the DLL first — the server-side scrub only strips trivia.</p>
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <h2>Payloads{% if current_menu_id %} in this menu{% endif %}</h2>
+    {% if items %}
+    <div class="inline-form">
+      <span class="muted small" id="bulk-count">0 selected</span>
+      <button type="submit" form="bulk-items-form" class="ghost small danger" disabled id="bulk-del-btn">Delete selected</button>
+    </div>
+    {% endif %}
+  </div>
+
+  <form id="bulk-items-form" method="post" action="/admin/items/delete_bulk"
+        onsubmit="return confirm('Delete all selected payloads? Drops their entitlements and delivery-log rows. Cannot be undone.');"></form>
+
+  <table>
+    <thead><tr>
+      <th>{% if items %}<input type="checkbox" id="bulk-select-all">{% endif %}</th>
+      <th>Image</th><th>ID</th><th>Menu</th><th>Name</th><th>Version</th><th>Current</th><th>Size</th><th>Created</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for it in items %}
+      <tr>
+        <td><input type="checkbox" class="bulk-select" name="item_id" value="{{ it.id }}" form="bulk-items-form"></td>
+        <td>
+          {% if it.has_image %}
+            <img src="/api/items/{{ it.id }}/image" alt="" style="height:44px;width:78px;object-fit:cover;border-radius:4px;">
+          {% else %}
+            <span class="muted small">—</span>
+          {% endif %}
+        </td>
+        <td class="mono">{{ it.id }}</td>
+        <td class="mono small">{{ it.menu_slug or '—' }}</td>
+        <td>{{ it.name }}</td>
+        <td class="mono">{{ it.version or '—' }}</td>
+        <td>
+          {% if it.is_current %}
+            <span class="tag tag-login_ok">current</span>
+          {% elif it.menu_id %}
+            <form method="post" action="/admin/items/set_current" class="inline">
+              <input type="hidden" name="item_id" value="{{ it.id }}">
+              <button class="ghost small">Set current</button>
+            </form>
+          {% else %}
+            <span class="muted small">(no menu)</span>
+          {% endif %}
+        </td>
+        <td class="mono">{{ (it.size / 1024)|round(1) }} KB</td>
+        <td class="mono">{{ it.created|ts }}</td>
+        <td class="actions">
+          <form method="post" action="/admin/items/set_menu" class="inline">
+            <input type="hidden" name="item_id" value="{{ it.id }}">
+            <select name="menu_id" onchange="this.form.submit()">
+              <option value="0">(no menu)</option>
+              {% for m in menus %}
+                <option value="{{ m.id }}" {{ 'selected' if m.id == it.menu_id }}>{{ m.name }}</option>
+              {% endfor %}
+            </select>
+          </form>
+          <form method="post" action="/admin/items/set_image" class="inline" enctype="multipart/form-data">
+            <input type="hidden" name="item_id" value="{{ it.id }}">
+            <input type="file" name="image" accept="image/png,image/jpeg,image/webp" style="width:120px" onchange="this.form.submit()">
+          </form>
+          <form method="post" action="/admin/items/set_description" class="inline">
+            <input type="hidden" name="item_id" value="{{ it.id }}">
+            <input type="text" name="description" value="{{ it.description or '' }}" placeholder="Edit description" style="width:140px">
+            <button class="ghost small">Save</button>
+          </form>
+          <form method="post" action="/admin/items/delete" class="inline"
+                onsubmit="return confirm('Delete payload #{{ it.id }} ({{ it.name }})? Drops entitlements and delivery-log rows for it. Cannot be undone.');">
+            <input type="hidden" name="item_id" value="{{ it.id }}">
+            <button class="ghost small danger">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="10" class="muted">No payloads yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{% if items %}
+<script>
+(function () {
+  var all = document.getElementById('bulk-select-all');
+  var btn = document.getElementById('bulk-del-btn');
+  var countEl = document.getElementById('bulk-count');
+  var boxes = document.querySelectorAll('input.bulk-select');
+
+  function update() {
+    var n = 0;
+    boxes.forEach(function (b) { if (b.checked) n++; });
+    countEl.textContent = n + ' selected';
+    btn.disabled = (n === 0);
+    all.checked = (n === boxes.length && n > 0);
+    all.indeterminate = (n > 0 && n < boxes.length);
+  }
+
+  all.addEventListener('change', function () {
+    boxes.forEach(function (b) { b.checked = all.checked; });
+    update();
+  });
+  boxes.forEach(function (b) { b.addEventListener('change', update); });
+  update();
+})();
+</script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% set active = 'menus' %}
+{% block title %}Menus · License Server{% endblock %}
+{% block content %}
+<header class="page-head">
+  <h1>Menus</h1>
+  <p class="muted">A menu is a product (one loader build = one menu). Each menu holds its own set of payload versions. Mark one payload per menu as <strong>current</strong> so the loader auto-picks it.</p>
+</header>
+
+<section class="card">
+  <h2>Create a menu</h2>
+  <form method="post" action="/admin/menus/create" class="grid-form">
+    <label>Slug<input name="slug" placeholder="astre-pro" required pattern="[A-Za-z0-9_-]+"></label>
+    <label>Display name<input name="name" placeholder="Astre Pro" required></label>
+    <label>Description<input name="description" placeholder="optional"></label>
+    <button type="submit">Create menu</button>
+  </form>
+  <p class="hint">The <strong>slug</strong> is baked into the loader at build time (<code>MENU_SLUG</code>). The loader fetches only payloads for its slug, so one loader binary never sees another product's payloads.</p>
+</section>
+
+<section class="card">
+  <h2>Menus</h2>
+  <table>
+    <thead><tr><th>Slug</th><th>Name</th><th>Description</th><th>Created</th><th></th></tr></thead>
+    <tbody>
+    {% for m in menus %}
+      <tr>
+        <td class="mono"><a href="/admin/items?menu={{ m.id }}">{{ m.slug }}</a></td>
+        <td>{{ m.name }}</td>
+        <td class="small">{{ m.description or '' }}</td>
+        <td class="mono">{{ m.created|ts }}</td>
+        <td class="actions">
+          <form method="post" action="/admin/menus/delete" class="inline"
+                onsubmit="return confirm('Delete menu {{ m.slug }}? Payloads under it will become orphaned.');">
+            <input type="hidden" name="menu_id" value="{{ m.id }}">
+            <button class="ghost small danger">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">No menus yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
