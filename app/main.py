@@ -117,6 +117,19 @@ async def api_items_list(menu: str | None = None):
     return Response(content="\n".join(lines) + "\n",
                     media_type="text/plain")
 
+@app.get("/api/menus/list")
+async def api_menus_list():
+    # Public listing: slug|name|description, one per line.
+    # Used by the loader to show the menu-picker before any auth.
+    lines = []
+    for m in store.list_menus():
+        slug = (m["slug"] or "").replace("|", " ").replace("\n", " ")
+        name = (m["name"] or "").replace("|", " ").replace("\n", " ")
+        desc = (m["description"] or "").replace("|", " ").replace("\n", " ")
+        lines.append(f"{slug}|{name}|{desc}")
+    return Response(content="\n".join(lines) + "\n",
+                    media_type="text/plain")
+
 @app.get("/api/menus/{slug}/current")
 async def api_menu_current(slug: str):
     iid = store.current_item_for_menu(slug)
