@@ -109,15 +109,10 @@ def build_admin_router() -> APIRouter:
             if not img_bytes:
                 img_bytes = None
 
-        try:
-            from .obfuscator import scrub_dotnet_dll, encrypt_payload
-            scrubbed = scrub_dotnet_dll(data)
-            if scrubbed and len(scrubbed) == len(data):
-                data = scrubbed
-            data = encrypt_payload(data)
-        except Exception:
-            pass
-
+        # Server-side DLL obfuscation (scrub + AEN1 encrypt) disabled:
+        # the stub was fine with raw IL and failing to roundtrip through
+        # the obfuscator was blocking Assembly.Load. Upload the DLL
+        # exactly as the user supplied it.
         store.create_item(name.strip(), version.strip(),
                           entry_point.strip(), data,
                           description=description.strip(),
