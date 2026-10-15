@@ -103,17 +103,46 @@ async def api_pubkey():
     return Response(content=appcfg.public_key_hex, media_type="text/plain")
 
 @app.get("/api/items/list")
-async def api_items_list():
+async def api_items_list(menu: str | None = None):
+    # Menu-scoped listing: loader passes ?menu=<slug> baked in at build
+    # time (MENU_SLUG constant), so one loader never sees another
+    # product's payloads. Legacy clients that omit the arg see all.
     lines = []
-    for it in store.list_items_metadata():
+    for it in store.list_items_metadata(menu_slug=menu):
         name = (it["name"] or "").replace("|", " ").replace("\n", " ")
         desc = (it["description"] or "").replace("|", " ").replace("\n", " ")
         version = (it["version"] or "").replace("|", " ").replace("\n", " ")
         has_img = "1" if it["has_image"] else "0"
+        cur = "1" if it["is_current"] else "0"
         lines.append(
-            f"{it['id']}|{has_img}|{it['size']}|"
+            f"{it['id']}|{has_img}|{it['size']}|{cur}|"
             f"{name}|{version}|{desc}")
     return Response(content="\n".join(lines) + "\n",
+                    media_type="text/plain")
+
+@app.get("/api/menus/list")
+async def api_menus_list():
+    # Public menu listing (slug|name|description per line). Only used by
+    # the admin dashboard preview and future tooling; the loader itself
+    # has its MENU_SLUG baked in at compile time.
+    lines = []
+    for m in store.list_menus():
+        slug = (m["slug"] or "").replace("|", " ").replace("\n", " ")
+        name = (m["name"] or "").replace("|", " ").replace("\n", " ")
+        desc = (m["description"] or "").replace("|", " ").replace("\n", " ")
+        lines.append(f"{slug}|{name}|{desc}")
+    return Response(content="\n".join(lines) + "\n",
+                    media_type="text/plain")
+
+@app.get("/api/menus/{slug}/current")
+async def api_menu_current(slug: str):
+    # Loader uses this for "just inject whatever's current" without
+    # having to parse the full item list.
+    iid = store.current_item_for_menu(slug)
+    if iid is None:
+        return Response(content=b"0", media_type="text/plain",
+                        status_code=404)
+    return Response(content=str(iid).encode("ascii"),
                     media_type="text/plain")
 
 @app.get("/api/items/{item_id}/image")
